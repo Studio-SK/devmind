@@ -13,10 +13,8 @@ Knowledge base for job prep — system design, DSA, behavioral, and project deep
 - **`designs/`** — full HLD practice designs (`url-shortener.md`, `chat-app.md`, etc).
   One file per system designed in mock interviews.
 - **`cheatsheets/`** — quick reference sheets to review right before an interview.
-- **`interview-phrases/`** — exact sentences and frameworks to use in interviews.
-  Includes opening framework, tradeoff language, estimation script.
-  - **`topic-phrases/`** — per-topic interview language. Generated alongside
-    concept notes after quiz completion.
+- **`topic-phrases/`** — per-topic interview language. Generated alongside
+  concept notes after quiz completion.
 - **`roadmap.md`** — master progress tracker. Single source of truth for what's
   been covered. Update checkboxes as topics are completed.
 
