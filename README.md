@@ -24,6 +24,17 @@ devmind/
     └── projects/
 ```
 
+## Notes Browser
+
+`docs/` is a small static site for reading `notes/` as rendered markdown with
+a folder-tree sidebar — no server needed locally (just open `docs/index.html`),
+and deployable via GitHub Pages (`Settings → Pages → Deploy from a branch →
+main → /docs`). After editing `notes/`, regenerate the site's data file:
+
+```bash
+node scripts/generate-notes-data.js
+```
+
 ## Usage
 
 ```bash
