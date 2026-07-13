@@ -1,13 +1,19 @@
 #!/usr/bin/env node
-// Regenerates docs/notes-data.js from notes/. Run: node scripts/generate-notes-data.js
-// Re-run any time notes/ changes, then commit the regenerated docs/notes-data.js.
+// Regenerates docs/notes-data.js from notes/, and re-stamps cache-busting
+// query params on docs/index.html's asset tags based on each asset's content
+// hash. Run: node scripts/generate-notes-data.js
+// Re-run any time notes/, docs/app.js, or docs/style.css changes, then commit
+// the regenerated docs/ files.
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 const repoRoot = path.resolve(__dirname, "..");
 const notesRoot = path.join(repoRoot, "notes");
-const outFile = path.join(repoRoot, "docs", "notes-data.js");
+const docsRoot = path.join(repoRoot, "docs");
+const outFile = path.join(docsRoot, "notes-data.js");
+const indexFile = path.join(docsRoot, "index.html");
 
 function walk(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -69,3 +75,24 @@ fs.mkdirSync(path.dirname(outFile), { recursive: true });
 fs.writeFileSync(outFile, output);
 
 console.log(`Wrote ${path.relative(repoRoot, outFile)} (${Object.keys(files).length} files)`);
+
+function hashFile(fullPath) {
+  const contents = fs.readFileSync(fullPath);
+  return crypto.createHash("sha256").update(contents).digest("hex").slice(0, 8);
+}
+
+function restampAssetVersions() {
+  let html = fs.readFileSync(indexFile, "utf8");
+
+  for (const asset of ["style.css", "app.js", "notes-data.js"]) {
+    const hash = hashFile(path.join(docsRoot, asset));
+    const escaped = asset.replace(/\./g, "\\.");
+    const pattern = new RegExp(`(["'])${escaped}(?:\\?v=[a-f0-9]+)?\\1`, "g");
+    html = html.replace(pattern, `$1${asset}?v=${hash}$1`);
+  }
+
+  fs.writeFileSync(indexFile, html);
+  console.log(`Re-stamped asset versions in ${path.relative(repoRoot, indexFile)}`);
+}
+
+restampAssetVersions();
