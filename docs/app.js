@@ -6,6 +6,11 @@
 
     const STORAGE_KEY = "devmind-docs-ui-state";
 
+    // Set while search-driven filtering is mutating <details>.open so the
+    // toggle listener below doesn't persist those as manual expand/collapse.
+    let isFiltering = false;
+    let searchItems = []; // { link, li, searchText }
+
     function loadUIState() {
         try {
             const raw = localStorage.getItem(STORAGE_KEY);
@@ -51,6 +56,7 @@
                 summary.textContent = node.name;
                 details.appendChild(summary);
                 details.addEventListener("toggle", () => {
+                    if (isFiltering) return;
                     const state = loadUIState();
                     const set = new Set(state.expanded);
                     if (details.open) set.add(dirPath); else set.delete(dirPath);
@@ -102,6 +108,138 @@
         loadFile(hashPath || DEFAULT_PATH);
     }
 
+    // Case-insensitive subsequence fuzzy match. Every char of `query` must
+    // appear in order in `text`; score rewards consecutive runs and matches
+    // at the start of a word so tighter/earlier matches rank higher.
+    function fuzzyMatch(query, text) {
+        if (!query) return { matched: true, score: 0, indices: [] };
+        const q = query.toLowerCase();
+        const t = text.toLowerCase();
+        const indices = [];
+        let qi = 0;
+        let score = 0;
+        let prevMatchIdx = -2;
+        for (let ti = 0; ti < t.length && qi < q.length; ti++) {
+            if (t[ti] === q[qi]) {
+                let charScore = 1;
+                if (ti === prevMatchIdx + 1) charScore += 3;
+                if (ti === 0 || t[ti - 1] === " ") charScore += 2;
+                score += charScore;
+                indices.push(ti);
+                prevMatchIdx = ti;
+                qi++;
+            }
+        }
+        if (qi < q.length) return { matched: false, score: 0, indices: [] };
+        // A subsequence existing isn't enough on its own — e.g. "monol"
+        // trivially appears scattered across "normalization-denormalization"
+        // even though that's not a relevant result. Reject matches whose
+        // average per-character score is too low, i.e. too scattered/loose
+        // to be a meaningful match, even though every character did match
+        // in order.
+        const MIN_AVG_SCORE = 2;
+        if (score / q.length < MIN_AVG_SCORE) return { matched: false, score: 0, indices: [] };
+        return { matched: true, score, indices };
+    }
+
+    function buildSearchIndex() {
+        searchItems = [];
+        const links = treeEl.querySelectorAll("a[data-path]");
+        for (const link of links) {
+            const path = link.dataset.path;
+            // Match against the filename only, not the full ancestor path —
+            // every note shares long folder prefixes (e.g. "system-design
+            // concepts 04 architecture"), and matching against those lets a
+            // greedy subsequence scanner consume query characters from the
+            // shared prefix before ever reaching the actual filename, which
+            // corrupts scoring for the file that should rank highest.
+            const fileName = path.split("/").pop().replace(/\.md$/, "");
+            const searchText = fileName.replace(/[_-]/g, " ");
+            link.dataset.origText = link.textContent;
+            searchItems.push({ link, li: link.closest("li"), searchText });
+        }
+    }
+
+    function highlightLabel(link, indices) {
+        const text = link.dataset.origText;
+        if (!indices.length) {
+            link.textContent = text;
+            return;
+        }
+        const idxSet = new Set(indices);
+        let html = "";
+        for (let i = 0; i < text.length; i++) {
+            const ch = text[i];
+            html += idxSet.has(i) ? "<mark>" + ch + "</mark>" : ch;
+        }
+        link.innerHTML = html;
+    }
+
+    function restoreDetailsFromState() {
+        const state = loadUIState();
+        const expandedSet = new Set(state.expanded);
+        const detailsEls = treeEl.querySelectorAll("details[data-path]");
+        for (const d of detailsEls) {
+            d.open = expandedSet.has(d.dataset.path);
+        }
+    }
+
+    function applyFilter(query) {
+        isFiltering = true;
+
+        if (!query) {
+            for (const item of searchItems) highlightLabel(item.link, []);
+            const allLis = treeEl.querySelectorAll("li");
+            for (const li of allLis) li.hidden = false;
+            restoreDetailsFromState();
+            isFiltering = false;
+            return;
+        }
+
+        for (const item of searchItems) {
+            const result = fuzzyMatch(query, item.searchText);
+            item.li.hidden = !result.matched;
+            if (result.matched) {
+                const labelMatch = fuzzyMatch(query, item.link.dataset.origText);
+                highlightLabel(item.link, labelMatch.matched ? labelMatch.indices : []);
+            } else {
+                highlightLabel(item.link, []);
+            }
+        }
+
+        // Bottom-up: a folder is visible (and force-opened) only if it has
+        // at least one visible descendant. Deepest folders first so parent
+        // visibility can rely on already-resolved child state.
+        const allDetails = Array.from(treeEl.querySelectorAll("details[data-path]"));
+        allDetails.sort((a, b) => b.dataset.path.split("/").length - a.dataset.path.split("/").length);
+        for (const d of allDetails) {
+            const li = d.closest("li");
+            const hasVisibleDescendant = Array.from(d.querySelectorAll("li")).some((x) => !x.hidden);
+            li.hidden = !hasVisibleDescendant;
+            if (hasVisibleDescendant) d.open = true;
+        }
+
+        isFiltering = false;
+    }
+
+    function setupSearch() {
+        const searchInput = document.getElementById("tree-search");
+        searchInput.addEventListener("input", () => {
+            applyFilter(searchInput.value.trim());
+        });
+        searchInput.addEventListener("keydown", (e) => {
+            if (e.key === "Escape") {
+                searchInput.value = "";
+                applyFilter("");
+                searchInput.blur();
+            } else if (e.key === "Enter") {
+                e.preventDefault();
+                const firstLink = treeEl.querySelector("li:not([hidden]) > a[data-path]");
+                if (firstLink) firstLink.click();
+            }
+        });
+    }
+
     function setupSidebarToggle(initialCollapsed) {
         const toggleBtn = document.getElementById("sidebar-toggle");
         if (initialCollapsed) {
@@ -126,6 +264,8 @@
         saveUIState({ expanded: Array.from(expandedSet), sidebarCollapsed: uiState.sidebarCollapsed });
 
         buildTree(window.NOTES_DATA.tree, treeEl, "", expandedSet);
+        buildSearchIndex();
+        setupSearch();
         setupSidebarToggle(uiState.sidebarCollapsed);
         window.addEventListener("hashchange", loadFromHash);
         loadFromHash();
