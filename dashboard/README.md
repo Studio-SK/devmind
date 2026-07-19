@@ -10,7 +10,19 @@ npx prisma migrate dev   # creates prisma/dev.db
 npm run dev
 ```
 
-Open http://localhost:3000 (redirects to `/dashboard`).
+Open http://localhost:3000 (redirects to `/dashboard`). `npm run dev` hot-reloads on save — no restart needed while developing.
+
+## Running persistently in prod mode
+
+Prod mode (`next build` + `next start`) doesn't watch files, so it needs a process manager to stay up in the background. `scripts/start-prod.sh` builds and (re)starts it under [pm2](https://pm2.keymetrics.io/) on port **3300**:
+
+```bash
+npm run start:prod   # build + start (or restart, if already running) on :3300
+npm run logs:prod    # tail logs
+npm run stop:prod    # stop it
+```
+
+Workflow: keep developing with `npm run dev` as usual, then run `npm run start:prod` whenever you want to deploy the latest changes to the persistent instance — it rebuilds and restarts the existing pm2 process in place (no duplicate processes, survives closing the terminal). Requires `pm2` installed globally (`npm install -g pm2`).
 
 ## Stack
 
